@@ -25,8 +25,34 @@ app.use(
     })
 );
 
+async function getInfoFromReq(req){
+    return new Promise((resolve, reject) => {
+        const token = req.cookies?.token;
+        if(token){
+            jwt.verify(token, process.env.JWT_SECRET, {}, (err, data) => {
+                if(err) throw err;
+                resolve(data);
+            })
+        }
+        else{
+            reject('no token');
+        }
+    });
+}
 
-app.get("/profile", (req, res) => {
+app.get("/messages/:userId", async (req, res) => {
+    const {userId} = req.params;
+    const data = await getInfoFromReq(req);
+    const {ourUserId} = data.userId;
+    const messages = await Message.find({
+        sender : {$in:[userId, ourUserId]},
+        recipient : {$in:[userId, ourUserId]}, 
+    }).sort({createdAt : 1});
+    res.json(messages);
+});
+
+
+app.get("/profile", async (req, res) => {
     const token = req.cookies?.token;   
     if(token){
         jwt.verify(token, process.env.JWT_SECRET, {}, (err,data) => {
@@ -76,7 +102,7 @@ app.post("/register", async (req, res) => {
 
 const server = app.listen(4000);
 
-const wss = new WebSocketServer({server});
+const wss = new WebSocketServer({server}) ;
 
 wss.on('connection', (connection, req) => {
 
@@ -103,7 +129,7 @@ wss.on('connection', (connection, req) => {
             const messageDoc = await Message.create({sender: connection.userId, recipient, text});
             [...wss.clients]
             .filter(c => c.userId === recipient)
-            .forEach(c => c.send(JSON.stringify({text , sender: connection.userId, id: messageDoc._id})));
+            .forEach(c => c.send(JSON.stringify({text, recipient, sender: connection.userId, id: messageDoc._id})));
         }
     });
     

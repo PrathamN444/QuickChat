@@ -1,7 +1,9 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
 import { UserContext } from "./UserContext";
+import {uniqBy} from "lodash";
+import axios from "axios";
 
 
 export default function Chat() {
@@ -12,12 +14,22 @@ export default function Chat() {
     const [newMessages, setNewMessages] = useState('');
     const [allMessages, setAllMessages] = useState([]);
     const {id} = useContext(UserContext);
+    const divUnderMessages = useRef();
 
     useEffect(() => {
+        connectToWs();
+    }, []);
+
+    function connectToWs(){
         const socket = new WebSocket('ws://localhost:4000');
         setWs(socket);
         socket.addEventListener('message', handleMessage);
-    }, []);
+        socket.addEventListener('close', () => {
+            setTimeout(() => {
+                connectToWs();
+            }, 1000);
+        });
+    }
 
     function showOnlinePeople(peopleArray){
         const people = {};
@@ -32,14 +44,15 @@ export default function Chat() {
         if('online' in messageData){
             showOnlinePeople(messageData.online);
         }
-        else{
-            // console.log(messageData);
-            setAllMessages(prev => ([...prev, {text : messageData.text, isOur : false}]));
+        else if('text' in messageData){
+            setAllMessages(prev => ([...prev, {...messageData}]));
         }
     }
 
     const onlinePeopleExcOurUser = {...onlinePeople};
     delete onlinePeopleExcOurUser[id];
+
+    const messagesWithoutDuplicates = uniqBy(allMessages, 'id');
 
     function sendMessage(e){
         e.preventDefault();
@@ -47,9 +60,26 @@ export default function Chat() {
             recipient : selectedUserId,
             text : newMessages,
         }))
+        setAllMessages(prev => ([...prev, {text : newMessages, recipient: selectedUserId, sender: id, id: Date.now()}]));
         setNewMessages('');
-        setAllMessages(prev => ([...prev, {text : newMessages, isOur : true}]));
     }
+
+    // to set div to bottom when a new message comes in chat box 
+    useEffect(() => {
+        const div = divUnderMessages.current;
+        if(div){
+            div.scrollIntoView({behaviour: 'smooth', block: 'end'});
+        }
+    }, [allMessages])
+
+    useEffect(() => {
+        if(selectedUserId){
+            axios.get(`/messages/${selectedUserId}`).then(response => {
+                setAllMessages(response.data);
+            });
+        }
+    }, [selectedUserId]);
+    
 
     return (
         <div className="flex h-screen">
@@ -70,16 +100,25 @@ export default function Chat() {
                     </div>
                 ))}
             </div>
-            <div className="w-2/3 bg-blue-100 flex flex-col p-2">
+            <div className="w-2/3 bg-blue-100 flex flex-col p-2 gap-1">
                 <div className="flex-grow">
                     {!selectedUserId && (
                         <div className="flex flex-grow h-full items-center justify-center text-gray-400">send and recieve messages without any delay</div>
                     )}
                     {!!selectedUserId && (
-                        <div>
-                            {allMessages.map((msg, i) => (
-                                <div key={i}>{msg.text}</div>
-                            ))}
+                        <div className="relative h-full">
+                            <div className="overflow-y-scroll absolute inset-0">
+                                {messagesWithoutDuplicates.map((msg, i) => (
+                                    <div key={i} className={" " + (msg.sender === id ? "text-right" : "text-left")}>
+                                        <div className={"p-2 mx-2 my-1 text-left inline-block rounded-md " + (msg.sender === id ? "bg-green-400" : "bg-gray-400")}>
+                                            sender : {msg.sender} <br/>
+                                            my id : {id} <br/>
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                ))}
+                                <div ref={divUnderMessages}></div>
+                            </div>
                         </div>
                     )}
                 </div>
