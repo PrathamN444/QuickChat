@@ -43,13 +43,18 @@ async function getInfoFromReq(req){
 app.get("/messages/:userId", async (req, res) => {
     const {userId} = req.params;
     const data = await getInfoFromReq(req);
-    const {ourUserId} = data.userId;
+    const ourUserId = data.userId;
     const messages = await Message.find({
         sender : {$in:[userId, ourUserId]},
         recipient : {$in:[userId, ourUserId]}, 
     }).sort({createdAt : 1});
     res.json(messages);
 });
+
+app.get("/people", async (req, res) => {
+    const users = await User.find({}, {username:1, _id:1});
+    res.json(users);
+})
 
 
 app.get("/profile", async (req, res) => {
@@ -84,6 +89,10 @@ app.post("/login", async (req, res) => {
     }
 })
 
+app.post("/logout", (req, res) => {
+    res.cookie('token', '', {sameSite:'none', secure:true}).json('logged out');
+})
+
 app.post("/register", async (req, res) => {
     try{
         const {username, password} = req.body;
@@ -105,6 +114,30 @@ const server = app.listen(4000);
 const wss = new WebSocketServer({server}) ;
 
 wss.on('connection', (connection, req) => {
+
+    function notifyAboutOnlinePeople() {
+        // notify everyone about online users (when someone connects)
+        [...wss.clients].forEach(client => {
+            client.send(JSON.stringify({
+                online : [...wss.clients].map(c => ({userId:c.userId, username:c.username}))
+            }));
+        });
+    }
+
+    connection.isAlive = true;
+
+    connection.timer = setInterval(() => {
+        connection.ping();
+        connection.deathTimer = setTimeout(() => {
+            connection.isAlive = false;
+            connection.terminate();
+            notifyAboutOnlinePeople();
+        }, 1000);
+    }, 5000);
+
+    connection.on('pong', () => {
+        clearTimeout( connection.deathTimer );
+    });
 
     // reading id and username of the logged in user
     const cookies = req.headers.cookie;
@@ -129,14 +162,9 @@ wss.on('connection', (connection, req) => {
             const messageDoc = await Message.create({sender: connection.userId, recipient, text});
             [...wss.clients]
             .filter(c => c.userId === recipient)
-            .forEach(c => c.send(JSON.stringify({text, recipient, sender: connection.userId, id: messageDoc._id})));
+            .forEach(c => c.send(JSON.stringify({text, recipient, sender: connection.userId, _id: messageDoc._id})));
         }
     });
     
-    // notify everyone about online users (when someone connects)
-    [...wss.clients].forEach(client => {
-        client.send(JSON.stringify({
-            online : [...wss.clients].map(c => ({userId:c.userId, username:c.username}))
-        }));
-    });
+    notifyAboutOnlinePeople();
 });

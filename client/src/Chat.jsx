@@ -1,19 +1,21 @@
 import { useContext, useEffect, useRef, useState } from "react";
-import Avatar from "./Avatar";
 import Logo from "./Logo";
 import { UserContext } from "./UserContext";
 import {uniqBy} from "lodash";
 import axios from "axios";
+import Contact from "./Contact";
+
 
 
 export default function Chat() {
 
     const [ws, setWs] = useState(null);
     const [onlinePeople, setOnlinePeople] = useState({});
+    const [offlinePeople, setOfflinePeople] = useState({});
     const [selectedUserId, setSelectedUserId] = useState(null);
     const [newMessages, setNewMessages] = useState('');
     const [allMessages, setAllMessages] = useState([]);
-    const {id} = useContext(UserContext);
+    const {id, username, setId, setUsername} = useContext(UserContext);
     const divUnderMessages = useRef();
 
     useEffect(() => {
@@ -31,9 +33,20 @@ export default function Chat() {
         });
     }
 
+    function logout(){
+        axios.post('/logout').then(() => {
+            setWs(null);
+            setId(null);
+            setUsername(null);
+        });
+    }
+
     function showOnlinePeople(peopleArray){
         const people = {};
-        peopleArray.forEach((person) => {
+        // console.log(peopleArray);
+        peopleArray
+            .filter(p => p.userId !== id)
+            .forEach((person) => {
             people[person.userId] = person.username;
         });
         setOnlinePeople(people);
@@ -49,10 +62,10 @@ export default function Chat() {
         }
     }
 
-    const onlinePeopleExcOurUser = {...onlinePeople};
-    delete onlinePeopleExcOurUser[id];
+    // const onlinePeopleExcOurUser = {...onlinePeople};
+    // delete onlinePeopleExcOurUser[id];
 
-    const messagesWithoutDuplicates = uniqBy(allMessages, 'id');
+    const messagesWithoutDuplicates = uniqBy(allMessages, '_id');
 
     function sendMessage(e){
         e.preventDefault();
@@ -60,7 +73,7 @@ export default function Chat() {
             recipient : selectedUserId,
             text : newMessages,
         }))
-        setAllMessages(prev => ([...prev, {text : newMessages, recipient: selectedUserId, sender: id, id: Date.now()}]));
+        setAllMessages(prev => ([...prev, {text : newMessages, recipient: selectedUserId, sender: id, _id: Date.now()}]));
         setNewMessages('');
     }
 
@@ -79,26 +92,52 @@ export default function Chat() {
             });
         }
     }, [selectedUserId]);
-    
+
+    useEffect(() => {
+        axios.get('/people').then(response => {
+            const offlinePeopleArr = response.data
+                .filter(p => p._id !== id)
+                .filter(p => !Object.keys(onlinePeople).includes(p._id));
+            const offlinePeople = {};
+            offlinePeopleArr.forEach(p => {
+                offlinePeople[p._id] = p.username;
+            });
+            setOfflinePeople(offlinePeople);
+        })
+    }, [onlinePeople]);    
 
     return (
-        <div className="flex h-screen">
-            <div className="w-1/3 bg-white p-2">
-                <Logo />
-                {Object.keys(onlinePeopleExcOurUser).map(userId => (
-                    <div key={userId} 
-                        onClick={() => setSelectedUserId(userId)}
-                        className={ "border-b border-gray-400 flex items-center cursor-pointer rounded-md " + (selectedUserId === userId ? "bg-blue-100" : "")}
-                    >
-                        {userId === selectedUserId && (
-                            <div className="w-1 h-16 bg-blue-500 rounded-r-md"></div>
-                        )}
-                        <div className="flex items-center gap-3 p-2">
-                            <Avatar userId={userId} username={onlinePeople[userId]}/>
-                            <span className="font-bold text-gray-800"> {onlinePeople[userId]} </span>
-                        </div>
+        <div className="flex h-screen ">
+            <div className="w-1/3 bg-white p-2 flex flex-col">
+                <div className="flex-grow">
+                    <Logo />
+                    {Object.keys(onlinePeople).map(userId => (
+                        <Contact
+                            key = {userId}
+                            userId = {userId}
+                            username = {onlinePeople[userId]}
+                            selected = {userId === selectedUserId}
+                            online = {true}
+                            onClick = {() => setSelectedUserId(userId)}
+                        />
+                    ))}
+                    {Object.keys(offlinePeople).map(userId => (
+                        <Contact
+                            key = {userId}
+                            userId = {userId}
+                            username = {offlinePeople[userId]}
+                            selected = {userId === selectedUserId}
+                            online = {false}
+                            onClick = {() => setSelectedUserId(userId)}
+                        />
+                    ))}
+                </div>
+                <div className="p-2 flex gap-3 items-center justify-center">
+                    <span>Welcome to QuickChat, {username} !</span>
+                    <div className="">
+                        <button className="text-sm bg-blue-500 text-white px-2 py-1 border rounded-md" onClick={() => logout()}>logout</button>
                     </div>
-                ))}
+                </div>
             </div>
             <div className="w-2/3 bg-blue-100 flex flex-col p-2 gap-1">
                 <div className="flex-grow">
@@ -108,11 +147,9 @@ export default function Chat() {
                     {!!selectedUserId && (
                         <div className="relative h-full">
                             <div className="overflow-y-scroll absolute inset-0">
-                                {messagesWithoutDuplicates.map((msg, i) => (
-                                    <div key={i} className={" " + (msg.sender === id ? "text-right" : "text-left")}>
+                                {messagesWithoutDuplicates.map((msg) => (
+                                    <div key={msg._id} className={" " + (msg.sender === id ? "text-right" : "text-left")}>
                                         <div className={"p-2 mx-2 my-1 text-left inline-block rounded-md " + (msg.sender === id ? "bg-green-400" : "bg-gray-400")}>
-                                            sender : {msg.sender} <br/>
-                                            my id : {id} <br/>
                                             {msg.text}
                                         </div>
                                     </div>
