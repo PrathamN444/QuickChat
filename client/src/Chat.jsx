@@ -62,19 +62,33 @@ export default function Chat() {
         }
     }
 
-    // const onlinePeopleExcOurUser = {...onlinePeople};
-    // delete onlinePeopleExcOurUser[id];
-
     const messagesWithoutDuplicates = uniqBy(allMessages, '_id');
 
-    function sendMessage(e){
-        e.preventDefault();
+    function sendMessage(e, file = null){
+        if(e) e.preventDefault();
         ws.send(JSON.stringify({
             recipient : selectedUserId,
             text : newMessages,
+            file,
         }))
-        setAllMessages(prev => ([...prev, {text : newMessages, recipient: selectedUserId, sender: id, _id: Date.now()}]));
         setNewMessages('');
+        setAllMessages(prev => ([...prev, {text : newMessages, recipient: selectedUserId, sender: id, _id: Date.now()}]));
+        if(file){
+            axios.get(`/messages/${selectedUserId}`).then(response => {
+                setAllMessages(response.data);
+            });
+        }
+    }
+
+    function sendFile(ev){
+        const reader = new FileReader();
+        reader.readAsDataURL(ev.target.files[0]);
+        reader.onload = () => {
+            sendMessage(null, {
+                name : ev.target.files[0].name,
+                data : reader.result,
+            });
+        };
     }
 
     // to set div to bottom when a new message comes in chat box 
@@ -151,6 +165,13 @@ export default function Chat() {
                                     <div key={msg._id} className={" " + (msg.sender === id ? "text-right" : "text-left")}>
                                         <div className={"p-2 mx-2 my-1 text-left inline-block rounded-md " + (msg.sender === id ? "bg-green-400" : "bg-gray-400")}>
                                             {msg.text}
+                                            {msg.file && (
+                                                <div>
+                                                    <a target="_blank" className="underline" href={axios.defaults.baseURL + "uploads/" + msg.file}>
+                                                        {msg.file}
+                                                    </a>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -168,6 +189,12 @@ export default function Chat() {
                             placeholder="Type your message here"
                             className="border rounded-sm flex-grow p-2"
                         />
+                        <label className="bg-blue-300 p-2 cursor-pointer rounded-sm border border-blue-400">
+                            <input type="file" className="hidden" onChange={sendFile}/>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                            </svg>
+                        </label>
                         <button type="submit" className="p-2 bg-blue-500 border rounded-sm text-white">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />

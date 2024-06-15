@@ -7,7 +7,7 @@ export default function Register() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const {setUsername: setLoggedInUsername, setId} = useContext(UserContext);
-    const [registerOrLogin, setRegisterOrLogin] = useState('register');
+    const [registerOrLogin, setRegisterOrLogin] = useState('login');
 
     async function handleSubmit (e) {
         e.preventDefault();

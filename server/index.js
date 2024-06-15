@@ -9,12 +9,17 @@ import { sendCookie } from './utils/feature.js';
 import cookieParser from 'cookie-parser';
 import { WebSocketServer } from "ws";
 import { Message } from './model/message.js';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 connectDB();
 
 const app = express();
 
+const currentDir = ( typeof(__dirname) !== 'undefined' ) ? __dirname : process.cwd();
+
+app.use('/uploads', express.static(path.join(currentDir, 'uploads')));
 app.use(express.json());
 app.use(cookieParser());
 app.use(
@@ -90,7 +95,12 @@ app.post("/login", async (req, res) => {
 })
 
 app.post("/logout", (req, res) => {
-    res.cookie('token', '', {sameSite:'none', secure:true}).json('logged out');
+    res.cookie('token', '', {
+        expires: new Date(Date.now()),
+        sameSite:'none',
+        secure:true
+        })
+        .json('logged out');
 })
 
 app.post("/register", async (req, res) => {
@@ -157,12 +167,24 @@ wss.on('connection', (connection, req) => {
     // on getting message sending to recipient and in the all devices he logged in using filter
     connection.on('message', async (message) => {
         const messageData = JSON.parse(message.toString());
-        const {recipient, text} = messageData;
-        if(recipient && text){
-            const messageDoc = await Message.create({sender: connection.userId, recipient, text});
+        const {recipient, text, file} = messageData;
+        let filename = null;
+        if(file){
+            const parts = file.name.split('.');
+            const ext = parts[parts.length - 1];
+            filename = Date.now() + '.' + ext;
+            const pathToFile = path.join(currentDir, 'uploads', filename);
+            const bufferData = Buffer.from(file.data.split(',')[1], 'base64');
+            fs.writeFile(pathToFile, bufferData, (err) => {
+                if(err) console.log(err);
+                else console.log('file saved: ' + pathToFile);
+            });
+        }
+        if(recipient && (text || file)){
+            const messageDoc = await Message.create({sender: connection.userId, recipient, text, file: filename});
             [...wss.clients]
             .filter(c => c.userId === recipient)
-            .forEach(c => c.send(JSON.stringify({text, recipient, sender: connection.userId, _id: messageDoc._id})));
+            .forEach(c => c.send(JSON.stringify({text, recipient, sender: connection.userId, _id: messageDoc._id, file: filename})));
         }
     });
     
